@@ -1,0 +1,38 @@
+[42092] Log opened at 2025-11-14 02:38:38.126691
+[42092] [Step Debug] INFO: Connecting to configured address/port: 127.0.0.1:9001.
+[42092] [Step Debug] ERR: Time-out connecting to debugging client, waited: 200 ms. Tried: 127.0.0.1:9001 (through xdebug.client_host/xdebug.client_port).
+[42092] Log closed at 2025-11-14 02:38:38.333586
+
+[23288] Log opened at 2025-11-14 02:40:16.494658
+[23288] [Step Debug] INFO: Connecting to configured address/port: 127.0.0.1:9001.
+[23288] [Step Debug] ERR: Time-out connecting to debugging client, waited: 200 ms. Tried: 127.0.0.1:9001 (through xdebug.client_host/xdebug.client_port).
+[23288] [Step Debug] INFO: Connecting to configured address/port: 127.0.0.1:9001.
+[23288] [Step Debug] ERR: Time-out connecting to debugging client, waited: 200 ms. Tried: 127.0.0.1:9001 (through xdebug.client_host/xdebug.client_port).
+[23288] Log closed at 2025-11-14 02:40:17.854184
+
+[35024] Log opened at 2025-11-14 02:40:19.099560
+[35024] [Step Debug] INFO: Connecting to configured address/port: 127.0.0.1:9001.
+[35024] [Step Debug] ERR: Time-out connecting to debugging client, waited: 200 ms. Tried: 127.0.0.1:9001 (through xdebug.client_host/xdebug.client_port).
+[35024] [Step Debug] INFO: Connecting to configured address/port: 127.0.0.1:9001.
+[35024] [Step Debug] ERR: Time-out connecting to debugging client, waited: 200 ms. Tried: 127.0.0.1:9001 (through xdebug.client_host/xdebug.client_port).
+[35024] Log closed at 2025-11-14 02:40:20.109871
+
+[28012] Log opened at 2025-11-14 02:40:21.365848
+[28012] [Step Debug] INFO: Connecting to configured address/port: 127.0.0.1:9001.
+[28012] [Step Debug] ERR: Time-out connecting to debugging client, waited: 200 ms. Tried: 127.0.0.1:9001 (through xdebug.client_host/xdebug.client_port).
+[28012] [Step Debug] INFO: Connecting to configured address/port: 127.0.0.1:9001.
+[28012] [Step Debug] ERR: Time-out connecting to debugging client, waited: 200 ms. Tried: 127.0.0.1:9001 (through xdebug.client_host/xdebug.client_port).
+[28012] Log closed at 2025-11-14 02:40:22.311721
+
+[19480] Log opened at 2025-11-14 02:40:22.907387
+[19480] [Step Debug] INFO: Connecting to configured address/port: 127.0.0.1:9001.
+[19480] [Step Debug] ERR: Time-out connecting to debugging client, waited: 200 ms. Tried: 127.0.0.1:9001 (through xdebug.client_host/xdebug.client_port).
+[19480] Log closed at 2025-11-14 02:40:23.121864
+
+[39652] Log opened at 2025-11-14 02:40:23.651972
+[39652] [Step Debug] INFO: Connecting to configured address/port: 127.0.0.1:9001.
+[39652] [Step Debug] ERR: Time-out connecting to debugging client, waited: 200 ms. Tried: 127.0.0.1:9001 (through xdebug.client_host/xdebug.client_port).
+[39652] [Step Debug] INFO: Connecting to configured address/port: 127.0.0.1:9001.
+[39652] [Step Debug] ERR: Time-out connecting to debugging client, waited: 200 ms. Tried: 127.0.0.1:9001 (through xdebug.client_host/xdebug.client_port).
+[39652] Log closed at 2025-11-14 02:40:24.894144
+
