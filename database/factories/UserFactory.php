@@ -11,10 +11,8 @@ use Illuminate\Support\Str;
  */
 class UserFactory extends Factory
 {
-    /**
-     * The current password being used by the factory.
-     */
-    protected static ?string $password;
+    protected $model = User::class;
+
 
     /**
      * Define the model's default state.
@@ -29,16 +27,30 @@ class UserFactory extends Factory
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
+            // Wallet-specific field
+            'balance' => '0.0000',
         ];
     }
 
     /**
-     * Indicate that the model's email address should be unverified.
+     * Give the user a random positive balance (useful for transfer tests).
      */
-    public function unverified(): static
+    public function rich(): static
     {
-        return $this->state(fn (array $attributes) => [
-            'email_verified_at' => null,
+        $amount = $this->faker->randomFloat(4, 100, 5000);
+
+        return $this->state(fn() => [
+            'balance' => number_format($amount, 4, '.', ''),
+        ]);
+    }
+
+    /**
+     * Force the user balance to exactly zero.
+     */
+    public function zeroBalance(): static
+    {
+        return $this->state(fn() => [
+            'balance' => '0.0000',
         ]);
     }
 }
