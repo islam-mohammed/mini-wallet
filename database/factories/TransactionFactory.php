@@ -2,25 +2,23 @@
 
 namespace Database\Factories;
 
+use App\Models\Transaction;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Str;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\Transaction>
+ * @extends Factory<Transaction>
  */
 class TransactionFactory extends Factory
 {
-
     protected $model = Transaction::class;
 
-    /**
-     * Define the model's default state.
-     *
-     * @return array<string, mixed>
-     */
     public function definition(): array
     {
-        $amount = $this->faker->randomFloat(4, 1, 1000);
+        $amount = fake()->randomFloat(4, 1, 1000);
         $commission = round($amount * 0.015, 4);
+
         return [
             'id' => Str::ulid()->toBase32(),
             'sender_id' => User::factory(),

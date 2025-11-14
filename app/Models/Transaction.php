@@ -35,6 +35,7 @@ class Transaction extends Model
         'amount' => 'decimal:4',
         'commission_fee' => 'decimal:4',
     ];
+
     /**
      * Sender (debited user).
      */
@@ -42,6 +43,7 @@ class Transaction extends Model
     {
         return $this->belongsTo(User::class, 'sender_id');
     }
+
     /**
      * Receiver (credited user).
      */

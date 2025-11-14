@@ -2,23 +2,23 @@
 
 namespace Database\Factories;
 
+use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\User>
+ * @extends Factory<User>
  */
 class UserFactory extends Factory
 {
     protected $model = User::class;
 
-
     /**
-     * Define the model's default state.
-     *
-     * @return array<string, mixed>
+     * Cache the hashed password across users created by the factory.
      */
+    protected static ?string $password = null;
+
     public function definition(): array
     {
         return [
@@ -27,6 +27,7 @@ class UserFactory extends Factory
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
+
             // Wallet-specific field
             'balance' => '0.0000',
         ];
@@ -37,7 +38,7 @@ class UserFactory extends Factory
      */
     public function rich(): static
     {
-        $amount = $this->faker->randomFloat(4, 100, 5000);
+        $amount = fake()->randomFloat(4, 100, 5000);
 
         return $this->state(fn() => [
             'balance' => number_format($amount, 4, '.', ''),
