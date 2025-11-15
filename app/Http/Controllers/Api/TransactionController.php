@@ -12,6 +12,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use App\Events\TransactionCreated;
 
 class TransactionController extends Controller
 {
@@ -67,6 +68,14 @@ class TransactionController extends Controller
             $transaction = $transfersMoney->transfer($sender, $receiver, $amount);
 
             $sender->refresh();
+            $receiver->refresh();
+
+            // Dispatch broadcastable event
+            TransactionCreated::dispatch(
+                $transaction,
+                (string) $sender->balance,
+                (string) $receiver->balance
+            );
 
             return response()->json([
                 'data' => new TransactionResource(

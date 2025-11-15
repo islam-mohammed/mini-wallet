@@ -4,6 +4,10 @@ use App\Models\User;
 use App\Models\Transaction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
+use App\Events\TransactionCreated;
+use Illuminate\Support\Facades\Event;
+
+
 use function Pest\Laravel\postJson;
 
 uses(RefreshDatabase::class);
@@ -25,6 +29,8 @@ it('creates a transaction and returns updated balance', function () {
 
     Sanctum::actingAs($sender);
 
+    Event::fake([TransactionCreated::class]);
+
     $response = postJson('/api/transactions', [
         'receiver_id' => $receiver->id,
         'amount' => '100.0000',
@@ -40,14 +46,22 @@ it('creates a transaction and returns updated balance', function () {
     $sender->refresh();
     $receiver->refresh();
 
-    // 1000 - (100 + 1.5) = 898.5
     expect($sender->balance)->toBe('898.5000');
     expect($receiver->balance)->toBe('100.0000');
 
     $response->assertJsonPath('meta.balance', '898.5000');
 
     expect(Transaction::query()->count())->toBe(1);
+
+    Event::assertDispatched(TransactionCreated::class, function (TransactionCreated $event) use ($sender, $receiver) {
+        return
+            $event->transaction->sender_id === $sender->id &&
+            $event->transaction->receiver_id === $receiver->id &&
+            $event->senderBalance === '898.5000' &&
+            $event->receiverBalance === '100.0000';
+    });
 });
+
 
 it('returns validation errors for invalid payload', function () {
     /** @var User $user */
