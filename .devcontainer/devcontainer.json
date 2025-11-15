@@ -1,0 +1,26 @@
+{
+  "name": "Mini Wallet Dev",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspace",
+  "forwardPorts": [8000, 5173],
+  "postCreateCommand": "composer install && npm install && cp .env.example .env && php artisan key:generate && php artisan migrate --seed",
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "bmewburn.vscode-intelephense-client",
+        "amiralizadeh9480.laravel-extra-intellisense",
+        "onecentlin.laravel-blade",
+        "esbenp.prettier-vscode",
+        "dbaeumer.vscode-eslint"
+      ]
+    }
+  },
+  "remoteUser": "vscode"
+}

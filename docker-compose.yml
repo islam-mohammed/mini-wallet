@@ -1,0 +1,46 @@
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+    container_name: mini_wallet_app
+    working_dir: /workspace
+    volumes:
+      - .:/workspace:cached
+    depends_on:
+      - mysql
+      - redis
+    ports:
+      - "8000:8000"   # Laravel
+      - "5173:5173"   # Vite
+    command: sleep infinity  # Dev container runs, you start servers manually in the terminal
+
+  mysql:
+    image: mysql:8.0
+    container_name: mini_wallet_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: mini_wallet
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_USER: wallet
+      MYSQL_PASSWORD: wallet
+    ports:
+      - "3306:3306"
+    command: --default-authentication-plugin=mysql_native_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  redis:
+    image: redis:7-alpine
+    container_name: mini_wallet_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  mysql_data:
+  redis_data:
