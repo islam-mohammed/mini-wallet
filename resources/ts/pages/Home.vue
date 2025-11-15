@@ -4,7 +4,8 @@
       Welcome to Mini Wallet
     </h2>
     <p class="text-sm text-slate-300">
-      Backend, real-time, and business logic will be implemented here.
+      Use the Wallet page to send money, see your transaction history, and watch
+      updates in real time.
     </p>
   </section>
 </template>
