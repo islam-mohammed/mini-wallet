@@ -1,0 +1,95 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Domain\Wallet\Contracts\TransfersMoney;
+use App\Domain\Wallet\Exceptions\InsufficientBalanceException;
+use App\Domain\Wallet\Exceptions\InvalidTransferException;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\TransactionStoreRequest;
+use App\Http\Resources\TransactionResource;
+use App\Models\Transaction;
+use App\Models\User;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+
+class TransactionController extends Controller
+{
+    /**
+     * GET /api/transactions
+     *
+     * Returns transaction history (incoming + outgoing) + current balance.
+     */
+    public function index(Request $request): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        $transactions = Transaction::query()
+            ->with(['sender', 'receiver']) // avoid N+1
+            ->where(function ($query) use ($user) {
+                $query->where('sender_id', $user->id)
+                    ->orWhere('receiver_id', $user->id);
+            })
+            ->orderByDesc('created_at')
+            ->cursorPaginate(20);
+
+        // Refresh balance from DB to avoid stale values
+        $user->refresh();
+
+        return response()->json([
+            'data' => TransactionResource::collection($transactions),
+            'meta' => [
+                'balance' => (string) $user->balance,
+                'next_cursor' => $transactions->nextCursor()?->encode(),
+            ],
+        ]);
+    }
+
+    /**
+     * POST /api/transactions
+     *
+     * Executes a new money transfer.
+     */
+    public function store(
+        TransactionStoreRequest $request,
+        TransfersMoney $transfersMoney
+    ): JsonResponse {
+        /** @var User $sender */
+        $sender = $request->user();
+
+        /** @var User $receiver */
+        $receiver = User::query()->findOrFail($request->input('receiver_id'));
+
+        $amount = (string) $request->input('amount');
+
+        try {
+            $transaction = $transfersMoney->transfer($sender, $receiver, $amount);
+
+            $sender->refresh();
+
+            return response()->json([
+                'data' => new TransactionResource(
+                    $transaction->load(['sender', 'receiver'])
+                ),
+                'meta' => [
+                    'balance' => (string) $sender->balance,
+                ],
+            ], 201);
+        } catch (InsufficientBalanceException $exception) {
+            return response()->json([
+                'message' => $exception->getMessage(),
+                'errors' => [
+                    'amount' => [$exception->getMessage()],
+                ],
+            ], 422);
+        } catch (InvalidTransferException $exception) {
+            return response()->json([
+                'message' => $exception->getMessage(),
+                'errors' => [
+                    'amount' => [$exception->getMessage()],
+                ],
+            ], 422);
+        }
+    }
+}

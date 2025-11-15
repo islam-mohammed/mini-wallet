@@ -8,6 +8,6 @@ class InsufficientBalanceException extends RuntimeException
 {
     public function __construct(string $message = 'Insufficient balance for this transfer.')
     {
-        parent::__construct($this->message);
+        parent::__construct($message);
     }
 }
