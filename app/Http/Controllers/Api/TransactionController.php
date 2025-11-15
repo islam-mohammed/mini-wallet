@@ -13,6 +13,7 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use App\Events\TransactionCreated;
+use Illuminate\Support\Facades\Cache;
 
 class TransactionController extends Controller
 {
@@ -59,6 +60,24 @@ class TransactionController extends Controller
         /** @var User $sender */
         $sender = $request->user();
 
+        $idempotencyKey = $request->header('Idempotency-Key');
+        $lockCacheKey = null;
+
+        if ($idempotencyKey) {
+            $lockCacheKey = 'wallet:idempotency:' . $idempotencyKey;
+
+            $ttlSeconds = (int) config('wallet.idempotency_ttl', 300);
+
+            // Cache::add is atomic - succeeds only if key doesn't exist.
+            $acquired = Cache::add($lockCacheKey, 'locked', $ttlSeconds);
+
+            if (! $acquired) {
+                return response()->json([
+                    'message' => 'Duplicate transfer request.',
+                ], 409);
+            }
+        }
+
         /** @var User $receiver */
         $receiver = User::query()->findOrFail($request->input('receiver_id'));
 
@@ -70,7 +89,6 @@ class TransactionController extends Controller
             $sender->refresh();
             $receiver->refresh();
 
-            // Dispatch broadcastable event
             TransactionCreated::dispatch(
                 $transaction,
                 (string) $sender->balance,
@@ -86,6 +104,10 @@ class TransactionController extends Controller
                 ],
             ], 201);
         } catch (InsufficientBalanceException $exception) {
+            if ($lockCacheKey) {
+                Cache::forget($lockCacheKey);
+            }
+
             return response()->json([
                 'message' => $exception->getMessage(),
                 'errors' => [
@@ -93,6 +115,10 @@ class TransactionController extends Controller
                 ],
             ], 422);
         } catch (InvalidTransferException $exception) {
+            if ($lockCacheKey) {
+                Cache::forget($lockCacheKey);
+            }
+
             return response()->json([
                 'message' => $exception->getMessage(),
                 'errors' => [
