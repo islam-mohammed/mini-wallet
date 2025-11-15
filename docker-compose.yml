@@ -6,7 +6,6 @@ services:
       context: .
       dockerfile: .devcontainer/Dockerfile
     container_name: mini_wallet_app
-    working_dir: /workspace
     volumes:
       - .:/workspace:cached
     depends_on:
@@ -15,7 +14,6 @@ services:
     ports:
       - "8000:8000"   # Laravel
       - "5173:5173"   # Vite
-    command: sleep infinity  # Dev container runs, you start servers manually in the terminal
 
   mysql:
     image: mysql:8.0
