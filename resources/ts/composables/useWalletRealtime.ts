@@ -1,14 +1,26 @@
-import { onBeforeUnmount } from 'vue'
 import type { TransactionCreatedPayload } from '@/lib/wallet-realtime'
-import { subscribeToUserWallet } from '@/lib/wallet-realtime'
+
+declare global {
+  interface Window {
+    Echo: any
+  }
+}
 
 export function useWalletRealtime(
   userId: number,
-  onEvent: (payload: TransactionCreatedPayload) => void,
+  onTransaction: (payload: TransactionCreatedPayload) => void,
 ) {
-  const unsubscribe = subscribeToUserWallet(userId, onEvent)
+  if (!window.Echo) {
+    console.warn('Echo is not initialized')
+    return
+  }
 
-  onBeforeUnmount(() => {
-    unsubscribe()
-  })
+  const channelName = `wallet.user.${userId}`
+
+  window.Echo
+    .private(channelName)
+    .listen('.wallet.transaction.created', (payload: TransactionCreatedPayload) => {
+      console.log('Realtime event received on channel', channelName, payload)
+      onTransaction(payload)
+    })
 }

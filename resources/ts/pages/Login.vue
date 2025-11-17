@@ -43,7 +43,6 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AppLoader from '@/components/AppLoader.vue'
-import { initEcho } from '@/lib/echo'
 
 const email = ref('')
 const password = ref('')
@@ -78,7 +77,6 @@ async function submit() {
 
     localStorage.setItem('token', data.token)
 
-    initEcho()
     router.push('/wallet')
   } catch (err) {
     error.value = 'Something went wrong. Please try again.'
