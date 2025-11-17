@@ -1,9 +1,10 @@
+// resources/ts/lib/echo.ts
 import Echo from 'laravel-echo'
 import Pusher from 'pusher-js'
 
-
+// laravel-echo expects Pusher on window
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-(window as any).Pusher = Pusher
+;(window as any).Pusher = Pusher
 
 export const echo = new Echo({
   broadcaster: 'pusher',
@@ -16,4 +17,6 @@ export const echo = new Echo({
   wssPort: Number(import.meta.env.VITE_PUSHER_PORT ?? 443),
   forceTLS: (import.meta.env.VITE_PUSHER_SCHEME ?? 'https') === 'https',
   enabledTransports: ['ws', 'wss'],
+  // important so Sanctum/session cookie is sent to /broadcasting/auth
+  withCredentials: true,
 })

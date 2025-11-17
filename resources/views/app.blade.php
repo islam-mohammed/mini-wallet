@@ -7,6 +7,10 @@
         content="width=device-width, initial-scale=1"
         name="viewport"
     />
+    <meta
+        content="{{ csrf_token() }}"
+        name="csrf-token"
+    >
     <title>Mini Wallet</title>
     @vite(['resources/css/app.css', 'resources/ts/main.ts'])
 </head>
