@@ -16,7 +16,7 @@
         </p>
         <p class="text-2xl font-bold tabular-nums">
           <span v-if="isLoadingUser">–</span>
-          <span v-else>{{ formattedBalance }} EGP</span>
+          <span v-else>{{ formattedBalance }} USD</span>
         </p>
       </div>
     </header>
@@ -31,20 +31,19 @@
         <form class="space-y-4" @submit.prevent="submit">
           <div class="space-y-1.5">
             <label class="text-xs text-slate-300">
-              Receiver ID
+              Receiver username
             </label>
             <input
-              v-model="form.receiverId"
-              type="number"
-              min="1"
+              v-model="form.receiverUsername"
+              type="text"
               class="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm outline-none focus:border-sky-500"
-              placeholder="Enter receiver user ID"
+              placeholder="Enter receiver username (e.g. alice)"
             />
             <p
-              v-if="errors.receiver_id"
+              v-if="errors.receiver_username"
               class="text-xs text-red-400"
             >
-              {{ errors.receiver_id }}
+              {{ errors.receiver_username }}
             </p>
           </div>
 
@@ -62,7 +61,7 @@
                 placeholder="0.0000"
               />
               <span class="text-xs text-slate-400">
-                EGP
+                USD
               </span>
             </div>
             <p
@@ -75,10 +74,10 @@
 
           <div class="flex items-center justify-between text-xs text-slate-400">
             <span>Commission: 1.5% paid by sender</span>
-            <span v-if="form.amountNumber > 0">
+            <span v-if="formAmountNumber > 0">
               You will be charged
               <span class="font-semibold text-slate-200">
-                {{ totalDebitPreview }} EGP
+                {{ totalDebitPreview }} USD
               </span>
             </span>
           </div>
@@ -144,26 +143,26 @@
               <div>
                 <p class="font-medium">
                   <span v-if="tx.direction === 'outgoing'">
-                    Sent {{ tx.amount }} EGP
+                    Sent {{ tx.amount }} USD
                     <span class="text-slate-400">
                       to
                     </span>
                     <span class="text-slate-100">
-                      {{ tx.receiver?.name ?? ('User #' + tx.receiver_id) }}
+                      {{ tx.receiver?.username ?? tx.receiver?.name ?? ('User #' + tx.receiver_id) }}
                     </span>
                   </span>
                   <span v-else>
-                    Received {{ tx.amount }} EGP
+                    Received {{ tx.amount }} USD
                     <span class="text-slate-400">
                       from
                     </span>
                     <span class="text-slate-100">
-                      {{ tx.sender?.name ?? ('User #' + tx.sender_id) }}
+                      {{ tx.sender?.username ?? tx.sender?.name ?? ('User #' + tx.sender_id) }}
                     </span>
                   </span>
                 </p>
                 <p class="text-[11px] text-slate-400">
-                  Commission: {{ tx.commission_fee }} EGP
+                  Commission: {{ tx.commission_fee }} USD
                 </p>
               </div>
             </div>
@@ -219,15 +218,18 @@ const isSubmitting = ref(false)
 
 const router = useRouter()
 
-const errors = reactive<Record<string, string | null>>({
-  receiver_id: null,
+const errors = reactive<{
+  receiver_username: string | null
+  amount: string | null
+}>({
+  receiver_username: null,
   amount: null,
 })
 
 const generalError = ref<string | null>(null)
 
 const form = reactive({
-  receiverId: '',
+  receiverUsername: '',
   amount: '',
 })
 
@@ -256,7 +258,7 @@ function formatDate(iso: string): string {
 }
 
 function normalizeApiErrors(details?: ApiErrorResponse | null) {
-  errors.receiver_id = null
+  errors.receiver_username = null
   errors.amount = null
   generalError.value = null
 
@@ -267,15 +269,15 @@ function normalizeApiErrors(details?: ApiErrorResponse | null) {
     return
   }
 
-  if (details.errors.receiver_id?.[0]) {
-    errors.receiver_id = details.errors.receiver_id[0]
+  if (details.errors.receiver_username?.[0]) {
+    errors.receiver_username = details.errors.receiver_username[0]
   }
 
   if (details.errors.amount?.[0]) {
     errors.amount = details.errors.amount[0]
   }
 
-  if (details.message && !errors.amount && !errors.receiver_id) {
+  if (details.message && !errors.amount && !errors.receiver_username) {
     generalError.value = details.message
   }
 }
@@ -293,6 +295,10 @@ async function loadUserAndTransactions() {
 
     transactions.value = res.data
     balance.value = res.meta.balance
+    if (currentUser.value) {
+      useWalletRealtime(currentUser.value.id, handleRealtimeEvent)
+    }
+
   } catch (err) {
     generalError.value = 'Failed to load wallet data. Please refresh.'
     isLoadingUser.value = false
@@ -332,11 +338,10 @@ async function submit() {
 
   try {
     const res = await apiPost<TransactionStoreResponse>('/transactions', {
-      receiver_id: Number(form.receiverId),
+      receiver_username: form.receiverUsername,
       amount: form.amount,
     })
 
-    // Update list optimistically using server truth
     const tx = res.data
     const exists = transactions.value.some((t) => t.id === tx.id)
     if (!exists) {
@@ -345,7 +350,7 @@ async function submit() {
 
     balance.value = res.meta.balance
 
-    form.receiverId = ''
+    form.receiverUsername = ''
     form.amount = ''
   } catch (err) {
     const anyErr = err as any
@@ -357,9 +362,16 @@ async function submit() {
 }
 
 onMounted(() => {
-    if (!isLoggedIn()) {
+  if (!isLoggedIn()) {
     router.push('/login')
+    return
   }
+
   void loadUserAndTransactions()
 })
 </script>
+
+<route lang="yaml">
+meta:
+  requiresAuth: true
+</route>

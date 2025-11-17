@@ -10,8 +10,8 @@ class TransactionSeeder extends Seeder
 {
     public function run(): void
     {
-        $sender = User::where('email', 'demo1@mini-wallet.test')->first();
-        $receiver = User::where('email', 'demo2@mini-wallet.test')->first();
+        $sender = User::where('email', 'alice@example.com')->first();
+        $receiver = User::where('email', 'bob@example.com')->first();
 
         if (!$sender || !$receiver) {
             return;

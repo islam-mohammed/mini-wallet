@@ -15,16 +15,16 @@ class TransactionStoreRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'receiver_id' => [
+            'receiver_username' => [
                 'required',
-                'integer',
-                'exists:users,id',
-                Rule::notIn([$this->user()?->id]), // prevent sending to self
+                'string',
+                'exists:users,username',
+                Rule::notIn([$this->user()?->username]),
             ],
             'amount' => [
                 'required',
                 'numeric',
-                'gt:0', // must be > 0
+                'gt:0',
             ],
         ];
     }

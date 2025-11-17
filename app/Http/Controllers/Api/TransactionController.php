@@ -79,12 +79,17 @@ class TransactionController extends Controller
         }
 
         /** @var User $receiver */
-        $receiver = User::query()->findOrFail($request->input('receiver_id'));
+        $receiver = User::where('username', $request->validated('receiver_username'))
+            ->firstOrFail();
 
         $amount = (string) $request->input('amount');
 
         try {
-            $transaction = $transfersMoney->transfer($sender, $receiver, $amount);
+            $transaction = $transfersMoney->transfer(
+                sender: $sender,
+                receiver: $receiver,
+                amount: $amount,
+            );
 
             $sender->refresh();
             $receiver->refresh();

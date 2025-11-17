@@ -4,7 +4,9 @@ import { echo } from './echo'
 export interface WalletUser {
   id: number
   name: string
+  username: string
   email?: string
+  balance?: string
 }
 
 export interface WalletTransaction {
@@ -15,14 +17,8 @@ export interface WalletTransaction {
   commission_fee: string
   direction?: 'incoming' | 'outgoing' | null
   created_at: string | null
-  sender?: {
-    id: number
-    name: string
-  }
-  receiver?: {
-    id: number
-    name: string
-  }
+  sender?: WalletUser
+  receiver?: WalletUser
 }
 
 export interface TransactionCreatedPayload {

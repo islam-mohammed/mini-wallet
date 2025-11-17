@@ -9,8 +9,8 @@ uses(RefreshDatabase::class);
 it('seeds demo users with correct balances', function () {
     $this->seed();
 
-    $user1 = User::where('email', 'demo1@mini-wallet.test')->first();
-    $user2 = User::where('email', 'demo2@mini-wallet.test')->first();
+    $user1 = User::where('email', 'alice@example.com')->first();
+    $user2 = User::where('email', 'bob@example.com')->first();
 
     expect($user1)->not->toBeNull();
     expect($user1->balance)->toBe('1000.0000');
@@ -22,8 +22,8 @@ it('seeds demo users with correct balances', function () {
 it('seeds demo transactions for ui verification', function () {
     $this->seed();
 
-    $user1 = User::where('email', 'demo1@mini-wallet.test')->first();
-    $user2 = User::where('email', 'demo2@mini-wallet.test')->first();
+    $user1 = User::where('email', 'alice@example.com')->first();
+    $user2 = User::where('email', 'bob@example.com')->first();
 
     $transactions = Transaction::where(function ($q) use ($user1, $user2) {
         $q->where('sender_id', $user1->id)->where('receiver_id', $user2->id);
