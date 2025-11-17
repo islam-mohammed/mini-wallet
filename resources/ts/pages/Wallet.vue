@@ -184,6 +184,8 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { apiGet, apiPost, type ApiErrorResponse } from '@/lib/api'
 import { useWalletRealtime } from '@/composables/useWalletRealtime'
+import { useRouter } from 'vue-router'
+import { isLoggedIn } from '../lib/auth'
 import type {
   WalletTransaction,
   WalletUser,
@@ -214,6 +216,8 @@ const transactions = ref<WalletTransaction[]>([])
 const isLoadingUser = ref(true)
 const isLoadingTransactions = ref(true)
 const isSubmitting = ref(false)
+
+const router = useRouter()
 
 const errors = reactive<Record<string, string | null>>({
   receiver_id: null,
@@ -353,6 +357,9 @@ async function submit() {
 }
 
 onMounted(() => {
+    if (!isLoggedIn()) {
+    router.push('/login')
+  }
   void loadUserAndTransactions()
 })
 </script>

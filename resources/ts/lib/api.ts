@@ -19,9 +19,13 @@ export async function apiGet<T>(path: string): Promise<T> {
     method: 'GET',
     headers: {
       Accept: 'application/json',
+      Authorization: `Bearer ${getToken()}`,
     },
-    credentials: 'same-origin',
   })
+
+  if (!response.ok) {
+    throw new Error(`GET ${path} failed`)
+  }
 
   return handleResponse<T>(response)
 }
@@ -35,10 +39,19 @@ export async function apiPost<T>(
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/json',
+       Authorization: `Bearer ${getToken()}`,
     },
-    credentials: 'same-origin',
     body: JSON.stringify(body),
   })
 
+   if (!response.ok) {
+    throw new Error(`POST ${path} failed`)
+  }
+
   return handleResponse<T>(response)
+}
+
+
+function getToken() {
+  return localStorage.getItem('token') ?? ''
 }
