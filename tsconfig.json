@@ -14,7 +14,7 @@
     "paths": {
       "@/*": ["resources/ts/*"]
     },
-    "types": ["vite/client"]
+    "types": ["vite/client", "unplugin-vue-router/client"]
   },
   "include": [
     "resources/ts/**/*.ts",

@@ -355,9 +355,4 @@ async function submit() {
 onMounted(() => {
   void loadUserAndTransactions()
 })
-
-const formAmountNumber = computed(() =>
-  form.amount ? Number(form.amount) : 0,
-)
-
 </script>
