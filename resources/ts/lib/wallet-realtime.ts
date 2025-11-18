@@ -27,21 +27,3 @@ export interface TransactionCreatedPayload {
   receiver_balance: string
 }
 
-/**
- * Subscribe to the authenticated user's wallet channel.
- * Returns a function to unsubscribe.
- */
-export function subscribeToUserWallet(
-  userId: number,
-  handler: (payload: TransactionCreatedPayload) => void,
-): () => void {
-  const channel: Channel = echo.private(`user.${userId}`)
-
-  channel.listen('.transaction.created', (event: TransactionCreatedPayload) => {
-    handler(event)
-  })
-
-  return () => {
-    echo.leave(`private-user.${userId}`)
-  }
-}

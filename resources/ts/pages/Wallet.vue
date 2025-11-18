@@ -178,13 +178,12 @@
     </div>
   </section>
 </template>
-
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { apiGet, apiPost, type ApiErrorResponse } from '@/lib/api'
-import { useWalletRealtime } from '@/composables/useWalletRealtime'
 import { useRouter } from 'vue-router'
 import { isLoggedIn } from '../lib/auth'
+import { echo } from '@/lib/echo'
 import type {
   WalletTransaction,
   WalletUser,
@@ -288,35 +287,6 @@ function normalizeApiErrors(details?: ApiErrorResponse | null) {
 }
 
 /**
- * Load current user + transactions and attach realtime listener.
- */
-async function loadUserAndTransactions() {
-  isLoadingUser.value = true
-  isLoadingTransactions.value = true
-
-  try {
-    const [user, res] = await Promise.all([
-      apiGet<UserResponse>('/user'),
-      apiGet<TransactionsIndexResponse>('/transactions'),
-    ])
-
-    currentUser.value = user
-    transactions.value = res.data
-    balance.value = res.meta.balance
-
-    if (currentUser.value) {
-      useWalletRealtime(currentUser.value.id, handleRealtimeEvent)
-    }
-  } catch (err) {
-    console.error(err)
-    generalError.value = 'Failed to load wallet data. Please refresh.'
-  } finally {
-    isLoadingUser.value = false
-    isLoadingTransactions.value = false
-  }
-}
-
-/**
  * Handle realtime broadcast: update list + balance.
  */
 function handleRealtimeEvent(payload: TransactionCreatedPayload) {
@@ -335,6 +305,62 @@ function handleRealtimeEvent(payload: TransactionCreatedPayload) {
     balance.value = payload.sender_balance
   } else if (tx.receiver_id === currentUser.value.id) {
     balance.value = payload.receiver_balance
+  }
+}
+
+// keep track of which channel we joined so we can leave it
+const currentChannelName = ref<string | null>(null)
+
+/**
+ * Subscribe to the user's private wallet channel.
+ */
+function subscribeToRealtime() {
+  if (!currentUser.value) return
+
+  const channelName = `wallet.user.${currentUser.value.id}`
+
+  // If we were already on a different channel, leave it
+  if (currentChannelName.value && currentChannelName.value !== channelName) {
+    echo.leave(`private-${currentChannelName.value}`)
+  }
+
+  currentChannelName.value = channelName
+
+  console.log('Subscribing to wallet channel', channelName)
+
+  echo
+    .private(channelName)
+    // IMPORTANT: leading dot because backend uses broadcastAs('wallet.transaction.created')
+    .listen('.wallet.transaction.created', (payload: TransactionCreatedPayload) => {
+      console.log('Received wallet.transaction.created event:', payload)
+      handleRealtimeEvent(payload)
+    })
+}
+
+/**
+ * Load current user + transactions and attach realtime listener.
+ */
+async function loadUserAndTransactions() {
+  isLoadingUser.value = true
+  isLoadingTransactions.value = true
+
+  try {
+    const [user, res] = await Promise.all([
+      apiGet<UserResponse>('/user'),
+      apiGet<TransactionsIndexResponse>('/transactions'),
+    ])
+
+    currentUser.value = user
+    transactions.value = res.data
+    balance.value = res.meta.balance
+
+    subscribeToRealtime()
+  } catch (err) {
+    console.error(err)
+    generalError.value = 'Failed to load wallet data. Please refresh.'
+  } finally {
+    isLoadingUser.value = false
+    isLoadingTransactions.value = false
   }
 }
 
@@ -380,6 +406,13 @@ onMounted(() => {
   }
 
   void loadUserAndTransactions()
+})
+
+onUnmounted(() => {
+  if (currentChannelName.value) {
+    console.log('Leaving wallet channel', currentChannelName.value)
+    echo.leave(`private-${currentChannelName.value}`)
+  }
 })
 </script>
 
