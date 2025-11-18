@@ -1,485 +1,275 @@
-# Mini Wallet – Implementation Summary & Setup Guide
+# Mini Wallet – Technical Assignment Coverage & Setup Guide
 
-This document explains:
+## 1. Architecture overview (Mini Wallet)
 
-- Which parts of the **technical assignment** are covered by the current implementation.
-- How to **run the application** locally.
-- How to **seed the database with 2 demo users** for testing.
-- How to **log in from two sessions** and test real‑time transfers.
-- How to **configure Pusher**.
-- A high‑level overview of the **architecture**.
+Mini Wallet is implemented as a single Laravel 12 API backend with a Vue 3 SPA frontend under `resources/ts`. The major building blocks are:
+
+- **Domain layer (`App\Domain\Wallet`)**
+  - `App\Domain\Wallet\Services\WalletTransferService` implements the core money transfer logic.
+  - `App\Domain\Wallet\Contracts\TransfersMoney` is the domain interface used to decouple controllers from the transfer implementation.
+  - `App\Domain\Wallet\Exceptions\InsufficientBalanceException` and `App\Domain\Wallet\Exceptions\InvalidTransferException` encapsulate domain‑level validation errors (e.g. insufficient funds, invalid amount, self‑transfer).
+
+- **HTTP API & application layer**
+  - `App\Http\Controllers\Api\LoginController` handles authentication and issues API tokens using Laravel Sanctum.
+  - `App\Http\Controllers\Api\TransactionController` exposes:
+    - `GET /api/transactions` – list authenticated user transactions and current balance.
+    - `POST /api/transactions` – perform a transfer between two users.
+  - `App\Http\Requests\Auth\LoginRequest` and `App\Http\Requests\TransactionStoreRequest` validate inbound payloads.
+  - `App\Http\Resources\TransactionResource` shapes the JSON API response for each transaction (amount, commission, direction, sender/receiver info, usernames, timestamps).
+
+- **Persistence layer**
+  - `App\Models\User` stores the wallet balance as a high‑precision decimal field (`balance`) and defines relations to transactions.
+  - `App\Models\Transaction` stores each transfer with `sender_id`, `receiver_id`, `amount`, and `commission_fee`, plus relationships back to the users.
+  - Migrations under `database/migrations` define the `users` table with a `balance` column and the `transactions` table with indexed foreign keys.
+
+- **Service providers & configuration**
+  - `App\Providers\WalletServiceProvider` binds `TransfersMoney` to `WalletTransferService` in the Laravel service container.
+  - `App\Providers\RouteServiceProvider` configures the `wallet-transfers` rate limiter for `POST /api/transactions`.
+  - `config/wallet.php` holds wallet‑specific configuration such as idempotency TTL.
+  - `config/broadcasting.php` configures broadcasting connections including the Pusher driver.
+
+- **Realtime & broadcasting**
+  - `App\Events\TransactionCreated` is a `ShouldBroadcast` event fired after each successful transfer.
+    - Broadcasts on two private channels: `wallet.user.{sender_id}` and `wallet.user.{receiver_id}`.
+    - Broadcast name: `wallet.transaction.created`.
+    - Broadcast payload includes the transaction data and the updated balances for both users.
+  - On the frontend, `resources/ts/lib/echo.ts` configures Laravel Echo with Pusher and authenticates via Sanctum bearer token.
+  - `resources/ts/composables/useWalletRealtime.ts` subscribes the SPA to the private `wallet.user.{id}` channel and listens for the `wallet.transaction.created` event to update the UI in real time.
+
+- **SPA frontend**
+  - `resources/ts/App.vue` is the root Vue 3 component.
+  - `resources/ts/pages/Login.vue` provides the login form and stores the API token in `localStorage`.
+  - `resources/ts/pages/Wallet.vue` is the main wallet screen showing:
+    - Current balance for the authenticated user.
+    - A “Send money” form bound to `/api/transactions`.
+    - Transaction history with direction (incoming/outgoing), amounts and commission.
+    - Realtime updates via the `useWalletRealtime` composable.
+
+- **Testing**
+  - Feature tests under `tests/Feature/API/Transactions` cover the wallet API behaviour (authentication, validation, idempotency, rate limiting, event dispatch).
+  - `tests/Feature/Domain/WalletDomainTest` and `tests/Feature/Wallet/WalletTransferServiceTest` exercise the domain layer and atomic balance updates.
+  - `tests/Feature/Database/SeederTest` verifies seeded users and demo transactions.
+  - `tests/Feature/SpaEntryTest` ensures the SPA entrypoint is reachable.
 
 ---
 
-## 1. Requirements Coverage (vs Technical Assignment)
+## 2. What the project covers from the technical assignment
 
-Below is a mapping between the technical assignment requirements and what the project implements.
+Based on the “Technical Assignment” specification, Mini Wallet implements the following requirements:
 
-### 1.1 Core Features
+- **Wallet balances stored as high‑precision decimals**
+  - User balances are stored directly on the `users` table as a decimal field (`balance`) to avoid recalculating balances from transaction history.
 
-- **Wallet & balance**
-  - Each user has a `balance` column on the `users` table (`DECIMAL(18,4)`).
-  - The **current balance is always stored** on the user, not recalculated from transactions.
-  - Balance is updated atomically when a transfer is made.
+- **Transactions with fee and proper relations**
+  - Each transfer creates exactly one `Transaction` row with:
+    - `sender_id` and `receiver_id` (foreign keys to `users`).
+    - `amount` (the amount received by the receiver).
+    - `commission_fee` (the fee paid by the sender).
+  - Eloquent relationships on `User` (`sentTransactions`, `receivedTransactions`) and `Transaction` (`sender`, `receiver`) support efficient loading and JSON serialization.
 
-- **Transactions**
-  - `transactions` table stores:
-    - `id` (ULID primary key)
-    - `sender_id`, `receiver_id`
-    - `amount`
-    - `commission_fee`
-    - timestamps
-  - Indexes are present on `sender_id`, `receiver_id`, and `created_at` to support high‑traffic queries.
+- **1.5% commission fee**
+  - The domain service `WalletTransferService` calculates a 1.5% commission on each transfer:
+    - Example: sending `100.0000` charges the sender `101.5000` and credits the receiver `100.0000`.
+  - Commission logic uses decimal math and is verified by the dedicated wallet transfer tests.
 
-- **Transfer & commission**
-  - Money transfers are handled by a dedicated domain service (`WalletTransferService`) behind an interface (`TransfersMoney`).
-  - A **1.5% commission** is charged to the sender:
-    - If the sender transfers `100.0000`, they are debited `101.5000`.
-    - The receiver gets `100.0000`.
-  - All money math uses **BCMath** with 4 decimal places to avoid floating‑point errors.
+- **Atomic transfers and consistency**
+  - `WalletTransferService` performs each transfer inside a single database transaction.
+  - It uses pessimistic row‑level locking on the two user rows in a consistent order, preventing race conditions and deadlocks under high concurrency.
+  - If any part of the transfer fails (validation, insufficient balance, DB error), neither balances nor the transaction record are persisted.
 
-### 1.2 Concurrency, Atomicity & Integrity
+- **Validation and error handling**
+  - `TransactionStoreRequest` validates:
+    - Existence of the receiver via `receiver_username` (cannot send to yourself).
+    - `amount` as a positive numeric value.
+  - Domain‑level exceptions (`InsufficientBalanceException`, `InvalidTransferException`) are translated into structured JSON errors with HTTP 422 responses.
+  - Feature tests verify validation and error responses.
 
-- **Atomic updates**
-  - The core transfer is wrapped in a **single database transaction**:
-    - Check sender balance.
-    - Debit sender (including commission).
-    - Credit receiver.
-    - Insert transaction row.
-  - If anything fails, all changes are rolled back.
-
-- **Row‑level locking**
-  - `SELECT ... FOR UPDATE` is used on both users in a deterministic order (sorted IDs) to:
-    - Prevent race conditions.
-    - Avoid deadlocks when users send to each other concurrently.
-
-- **Idempotency**
-  - Optional `Idempotency-Key` request header:
-    - First request with a given key succeeds and stores a lock in cache.
-    - Subsequent requests with the same key return `409 Duplicate transfer request.`
+- **Idempotency for transfers**
+  - `TransactionController::store` honours an `Idempotency-Key` request header.
+  - Idempotency keys are stored in cache (using `WALLET_IDEMPOTENCY_TTL` from `config/wallet.php` / `.env`) to prevent duplicate transfers on retries.
 
 - **Rate limiting**
-  - A custom `wallet-transfers` rate limiter is configured.
-  - `POST /api/transactions` is protected by `throttle:wallet-transfers`, returning `429` if the limit is exceeded.
+  - A custom `wallet-transfers` limiter is configured in `RouteServiceProvider`.
+  - The `POST /api/transactions` route uses this limiter to enforce a per‑minute cap per user (or IP) for transfer requests.
+  - Feature tests validate that excessive requests are rejected with HTTP 429.
 
-### 1.3 API Endpoints
+- **Realtime notifications via Pusher**
+  - On each successful transfer, `TransactionCreated` is dispatched and broadcast via Pusher:
+    - Both the sender and receiver subscribe to their own private `wallet.user.{id}` channels.
+    - The SPA uses Laravel Echo to update balances and transaction history instantly whenever the event is received.
+  - This matches the requirement for a real‑time wallet UI.
 
-- **Authentication**
-  - `POST /api/login`
-    - Accepts credentials, returns a **Sanctum token**.
-  - Protected routes use `auth:sanctum`.
+- **Single-page application frontend**
+  - The Vue 3 SPA under `resources/ts` consumes the `/api/login`, `/api/user`, `/api/transactions` endpoints.
+  - `Wallet.vue` implements the live wallet UI with current balance, list of transactions, and the send‑money form.
+  - `Login.vue` handles authentication and redirects to the wallet screen.
 
-- **User & wallet**
-  - `GET /api/user`
-    - Returns the authenticated user (including current balance).
-  - `GET /api/transactions`
-    - Returns paginated transactions for the authenticated user (incoming + outgoing).
-    - Also returns `meta.balance` with the current balance.
-
-- **Transfers**
-  - `POST /api/transactions`
-    - Validates:
-      - `receiver_username` exists and is not the current user.
-      - `amount` is numeric and greater than 0.
-    - Uses `WalletTransferService` to perform an atomic transfer.
-    - Returns:
-      - `data` → newly created transaction resource (with sender/receiver info & direction).
-      - `meta.balance` → updated sender balance.
-
-### 1.4 Real‑Time Updates (Pusher)
-
-- **Backend**
-  - Event: `App\Events\TransactionCreated` implements `ShouldBroadcast`.
-  - Broadcasts on private channels:
-    - `wallet.user.{sender_id}`
-    - `wallet.user.{receiver_id}`
-  - Broadcast payload includes:
-    - `transaction` (with sender/receiver relations)
-    - `sender_balance`
-    - `receiver_balance`
-
-- **Frontend**
-  - Laravel Echo is configured in `resources/ts/lib/echo.ts`.
-  - A composable (`useWalletRealtime`) listens on:
-    - `private('wallet.user.{userId}')`
-    - Event name: `.wallet.transaction.created`
-  - Wallet UI updates in real time:
-    - Prepends the new transaction to the list.
-    - Updates the balance for the current user (sender or receiver).
-
-### 1.5 Frontend SPA (Vue 3)
-
-- Vue 3 + TypeScript + Vite SPA.
-- Main pages:
-  - **Login** page.
-  - **Wallet** page:
-    - Shows current balance.
-    - Displays transaction history (incoming/outgoing).
-    - Provides a form to send money by `receiver_username` and `amount`.
-    - Shows inline validation errors and a general error message.
-    - Reflects real‑time updates via Pusher.
+- **Automated tests**
+  - `composer.json` defines a `test` script that runs Laravel’s test suite.
+  - Tests cover both API endpoints and domain behaviour, as requested in the assignment.
 
 ---
 
-## 2. Running the Application Locally
+## 3. Running the application
 
-### 2.1 Prerequisites
+### 3.1. Requirements
 
-Make sure you have:
+To run Mini Wallet locally you will need:
 
-- PHP (8.1+ recommended)
-- Composer
-- Node.js (LTS) & npm or pnpm/yarn
-- A database (MySQL / MariaDB / PostgreSQL)
-- Redis (for cache / idempotency / rate limiting)
-- A Pusher account (for real‑time testing)
+- PHP 8.2 or newer (the project requires `php: ^8.2` in `composer.json`).
+- Composer.
+- Node.js and npm (for the Vue 3 SPA and Vite).
+- A database (e.g. MySQL, PostgreSQL, or SQLite) configured in `.env`.
 
-### 2.2 Environment Setup
+### 3.2. Initial setup
 
-1. **Install PHP dependencies:**
+From the project root (`mini-wallet-master`):
 
-   ```bash
-   composer install
-   ```
+1. **Install PHP dependencies**  
+   Use Composer to install backend dependencies defined in `composer.json`.
 
-2. **Install frontend dependencies:**
+2. **Create the `.env` file**  
+   - Copy `.env.example` to `.env`.  
+   - Set at least:
+     - `APP_NAME="Mini Wallet"`
+     - `APP_ENV=local`
+     - `APP_URL` (for example `http://localhost:8000`)
+     - Database connection settings (`DB_CONNECTION`, `DB_HOST`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`).
+     - Sanctum / SPA settings:
+       - `FRONTEND_URL=http://localhost:5173`
+       - `SANCTUM_STATEFUL_DOMAINS=localhost:5173`
+       - `SESSION_DOMAIN=localhost`
 
-   ```bash
-   npm install
-   # or
-   pnpm install
-   # or
-   yarn install
-   ```
+3. **Generate the application key**  
+   Run the Artisan key generation command once to set `APP_KEY` in `.env`.
 
-3. **Create an `.env` file:**
+4. **Install frontend dependencies**  
+   From the same project root, install the Node dependencies defined in `package.json`.
 
-   ```bash
-   cp .env.example .env
-   ```
+### 3.3. Database migration and seeding (creating the demo users)
 
-4. **Generate an application key:**
+Mini Wallet uses standard Laravel migrations and seeders. The main database seeder is `Database\Seeders\DatabaseSeeder`, which calls:
 
-   ```bash
-   php artisan key:generate
-   ```
+- `Database\Seeders\UserSeeder`
+- `Database\Seeders\TransactionSeeder`
 
-5. **Configure the database** in `.env`:
+To prepare the database and create the demo users:
 
-   ```env
-   DB_CONNECTION=mysql
-   DB_HOST=127.0.0.1
-   DB_PORT=3306
-   DB_DATABASE=mini_wallet
-   DB_USERNAME=your_db_user
-   DB_PASSWORD=your_db_password
-   ```
+1. Configure your database connection in `.env`.
+2. Run Laravel migrations **with seeding enabled** so that `UserSeeder` and `TransactionSeeder` are executed in one step.
 
-6. **Configure Redis** (optional but recommended):
+After this, two demo users will be created by `Database\Seeders\UserSeeder` with the following details:
 
-   ```env
-   CACHE_DRIVER=redis
-   QUEUE_CONNECTION=sync
-   REDIS_HOST=127.0.0.1
-   REDIS_PASSWORD=null
-   REDIS_PORT=6379
-   ```
+| Name  | Username | Email              | Password | Initial balance |
+|-------|----------|--------------------|----------|-----------------|
+| Alice | alice    | alice@example.com  | password | 1000.0000       |
+| Bob   | bob      | bob@example.com    | password | 500.0000        |
 
----
+These two users will also have some example transaction history created by `Database\Seeders\TransactionSeeder` for UI verification.
 
-## 3. Database Migrations & Seeding Two Users
+### 3.4. Starting the backend server
 
-### 3.1 Run migrations
+You can either run the Laravel development server directly or use the Composer helper script defined in `composer.json`.
 
-```bash
-php artisan migrate
-```
+- **Option A: Direct Artisan server**  
+  From the project root, start the Laravel HTTP server on port 8000.
 
-This creates the `users`, `transactions`, and any other required tables.
+- **Option B: Composer “dev” script**  
+  `composer.json` defines a `dev` script that uses `concurrently` to run:
+  - The HTTP server.
+  - Background processes (such as queue workers / log tailing).
+  - Vite (`npm run dev`) for the SPA.
 
-### 3.2 Seed exactly two demo users
+If you use the `dev` script, it will start both the backend and Vite dev server together.
 
-You can create a dedicated seeder for two test users.
+### 3.5. Starting the frontend
 
-1. **Create the seeder (if not already created):**
+The SPA is built with Vite. To run it separately (if you are not using the `dev` composer script):
 
-   ```bash
-   php artisan make:seeder DemoUsersSeeder
-   ```
+1. In the project root, start the Vite dev server.
+2. Open the frontend URL configured in `.env` (by default `http://localhost:5173`).
 
-2. **Edit `database/seeders/DemoUsersSeeder.php`:**
-
-   ```php
-   <?php
-
-   namespace Database\Seeders;
-
-   use App\Models\User;
-   use Illuminate\Database\Seeder;
-   use Illuminate\Support\Facades\Hash;
-
-   class DemoUsersSeeder extends Seeder
-   {
-       public function run(): void
-       {
-           // Sender
-           User::updateOrCreate(
-               ['email' => 'alice@example.com'],
-               [
-                   'name' => 'Alice Sender',
-                   'username' => 'alice',
-                   'password' => Hash::make('password'),
-                   'balance' => '1000.0000',
-               ]
-           );
-
-           // Receiver
-           User::updateOrCreate(
-               ['email' => 'bob@example.com'],
-               [
-                   'name' => 'Bob Receiver',
-                   'username' => 'bob',
-                   'password' => Hash::make('password'),
-                   'balance' => '500.0000',
-               ]
-           );
-       }
-   }
-   ```
-
-3. **Register the seeder in `DatabaseSeeder` (optional):**
-
-   In `database/seeders/DatabaseSeeder.php`:
-
-   ```php
-   public function run(): void
-   {
-       $this->call([
-           DemoUsersSeeder::class,
-       ]);
-   }
-   ```
-
-4. **Run the seeder:**
-
-   ```bash
-   php artisan db:seed --class=DemoUsersSeeder
-   # or, if registered in DatabaseSeeder:
-   php artisan db:seed
-   ```
-
-Now you have two users:
-
-- **Alice**
-  - Username: `alice`
-  - Email: `alice@example.com`
-  - Password: `password`
-  - Initial balance: `1000.0000`
-- **Bob**
-  - Username: `bob`
-  - Email: `bob@example.com`
-  - Password: `password`
-  - Initial balance: `500.0000`
+The SPA will communicate with the Laravel backend at the URL defined by `APP_URL`.
 
 ---
 
-## 4. Running the App & Testing with Two Sessions
+## 4. Configuring Pusher for realtime updates
 
-### 4.1 Start the backend API
+Mini Wallet uses Pusher for broadcasting the `TransactionCreated` event to the frontend. You can configure it with the existing environment variables in `.env.example`:
 
-```bash
-php artisan serve
-```
+- Backend broadcasting settings:
+  - `PUSHER_APP_ID=`
+  - `PUSHER_APP_KEY=`
+  - `PUSHER_APP_SECRET=`
+  - `PUSHER_APP_CLUSTER=mt1`
+  - `PUSHER_HOST=`
+  - `PUSHER_PORT=`
+  - `PUSHER_SCHEME=https`
+  - `PUSHER_APP_USE_TLS=true`
 
-This usually runs on `http://127.0.0.1:8000`.
+- Frontend (Vite) settings:
+  - `VITE_PUSHER_APP_KEY="${PUSHER_APP_KEY}"`
+  - `VITE_PUSHER_APP_CLUSTER="${PUSHER_APP_CLUSTER}"`
+  - `VITE_PUSHER_HOST=`
+  - `VITE_PUSHER_PORT=`
+  - `VITE_PUSHER_SCHEME="https"`
 
-### 4.2 Start the frontend dev server
+To test realtime behaviour:
 
-```bash
-npm run dev
-```
+1. Create a Pusher app in your Pusher dashboard.
+2. Fill in the above Pusher variables in `.env` with your app credentials.
+3. Ensure broadcasting is using the Pusher connection (for example by setting `BROADCAST_CONNECTION=pusher` in your `.env` and aligning `config/broadcasting.php` with that connection).
 
-By default, Vite serves the SPA on `http://127.0.0.1:5173` (or similar).  
-The SPA will make API calls to your Laravel backend.
+When a transfer succeeds, the backend will dispatch `App\Events\TransactionCreated`, and the frontend will receive the `wallet.transaction.created` event through Laravel Echo and Pusher.
 
-> If needed, configure the dev server proxy in `vite.config.ts` so `/api` routes go to `http://127.0.0.1:8000`.
+---
 
-### 4.3 Login and open two sessions
+## 5. Logging in and testing with two sessions
 
-1. **Open two browser windows:**
-   - Window A: normal window.
-   - Window B: incognito/private window (or a different browser).
+Once the backend and frontend are running and the database is seeded:
 
-2. **In Window A:**
-   - Go to the SPA (e.g. `http://127.0.0.1:5173`).
-   - Log in as **Alice**:
-     - Username/email: `alice@example.com` (depending on your login form).
+1. **Open the SPA as Alice**
+   - Navigate to the frontend URL (for example `http://localhost:5173`).
+   - Log in using the credentials from `UserSeeder`:
+     - Username or email: `alice` / `alice@example.com` (depending on your login form).
      - Password: `password`.
-   - Navigate to the **Wallet** page.
 
-3. **In Window B:**
-   - Open the SPA again.
-   - Log in as **Bob** (`bob@example.com` / `password`).
-   - Navigate to the **Wallet** page.
+2. **Open a second session as Bob**
+   - Open a new browser window or an incognito/private window.
+   - Go to the same frontend URL.
+   - Log in as Bob:
+     - Username or email: `bob` / `bob@example.com`.
+     - Password: `password`.
 
-4. **Test a transfer:**
-   - From Alice’s session:
-     - Use the **Send money** form.
-     - `receiver_username`: `bob`
-     - `amount`: `100.0000`
-   - Submit the form.
+3. **Testing a transfer**
+   - In Alice’s session, open the Wallet screen (`resources/ts/pages/Wallet.vue` in the SPA).
+   - Use the “Send money” form to send an amount from Alice to Bob by entering Bob’s username (`bob`) and an amount.
+   - After submission:
+     - Alice’s balance should decrease by the amount plus 1.5% commission.
+     - Bob’s balance should increase by the amount.
+     - Both sessions should see the new transaction appear in their transaction list.
+     - With Pusher configured, the Bob session should update in real time without manual refresh.
 
-5. **Observe the result:**
-   - Alice’s wallet should:
-     - Show a new **outgoing** transaction.
-     - Balance should update from `1000.0000` → `898.5000`.
-   - Bob’s wallet should:
-     - Show a new **incoming** transaction.
-     - Balance should update from `500.0000` → `600.0000`.
-
-If Pusher is correctly configured and both sessions are connected, Bob’s screen should update **immediately** without a manual refresh.
+This manual test flow validates both the domain logic (balances and commission) and the realtime broadcasting integration.
 
 ---
 
-## 5. Configuring Pusher
+## 6. Running tests
 
-To enable real‑time events via Pusher, you’ll need:
+Mini Wallet ships with a test suite configured via `composer.json`:
 
-1. A **Pusher app** (from https://dashboard.pusher.com/).
-2. The following keys from the Pusher dashboard:
-   - `app_id`
-   - `key`
-   - `secret`
-   - `cluster`
+- The `test` script runs Laravel’s test runner with configuration clearing beforehand.
 
-### 5.1 Backend (.env)
+To run all tests from the project root:
 
-Set these in your `.env`:
+1. Ensure your `.env` test configuration is valid (for example an in‑memory SQLite database or a dedicated test database).
+2. Run the Composer script that executes the test suite.
 
-```env
-BROADCAST_CONNECTION=pusher
+The tests cover:
 
-PUSHER_APP_ID=your_app_id
-PUSHER_APP_KEY=your_app_key
-PUSHER_APP_SECRET=your_app_secret
-PUSHER_APP_CLUSTER=your_cluster
+- API behaviour for `/api/transactions` (authentication, validation, successful transfer, idempotency, rate limiting, event dispatch).
+- Domain behaviour in `WalletTransferService` (atomic updates, commission, invalid transfer handling).
+- Database seeders (`UserSeeder`, `TransactionSeeder`) to ensure the example data is created as expected.
+- SPA entrypoint availability.
 
-# Make sure these match your dev environment
-PUSHER_HOST=
-PUSHER_PORT=443
-PUSHER_SCHEME=https
-```
-
-The `config/broadcasting.php` file should define a `pusher` connection that uses these environment variables.
-
-### 5.2 Frontend (Vite env)
-
-In `.env` or `.env.local` for the frontend:
-
-```env
-VITE_PUSHER_APP_KEY=your_app_key
-VITE_PUSHER_APP_CLUSTER=your_cluster
-VITE_PUSHER_APP_HOST=
-VITE_PUSHER_APP_PORT=443
-VITE_PUSHER_APP_SCHEME=https
-```
-
-The Echo setup in `resources/ts/lib/echo.ts` uses these `VITE_*` variables to connect.
-
-### 5.3 Broadcast auth (Sanctum)
-
-- Broadcast routes are protected with `auth:sanctum`.
-- Echo is configured to send the **Bearer token** in the `Authorization` header for `/broadcasting/auth`.
-
-Make sure:
-
-- Users log in and store the token (e.g. in `localStorage`).
-- Echo is initialized **after** a valid token exists, so private channel auth succeeds.
-
----
-
-## 6. High‑Level Architecture Overview
-
-### 6.1 Backend (Laravel)
-
-- **API layer**:
-  - Controllers in `App\Http\Controllers\Api`:
-    - `LoginController` – handles login and token issuance.
-    - `TransactionController` – lists and creates transactions.
-
-- **Domain layer**:
-  - `App\Domain\Wallet\Contracts\TransfersMoney` – interface for money transfers.
-  - `App\Domain\Wallet\Services\WalletTransferService` – concrete implementation:
-    - Encapsulates all wallet business logic.
-    - Uses DB transactions and row‑level locks.
-    - Performs commission calculation and balance updates.
-
-- **Validation & Resources**:
-  - `TransactionStoreRequest` – validates incoming transfer requests.
-  - `TransactionResource` – shapes the JSON response for transactions (including direction, usernames, and nested relations).
-
-- **Events & broadcasting**:
-  - `TransactionCreated` event:
-    - Broadcast via Pusher on private channels.
-    - Includes updated balances and full transaction data.
-
-- **Security & infrastructure**:
-  - Laravel Sanctum for API authentication.
-  - Rate limiting for transfer endpoint (`wallet-transfers`).
-  - Cache/Redis used for idempotency and rate limiting.
-
-### 6.2 Frontend (Vue 3 SPA)
-
-- **App shell & routing**:
-  - Vue 3 + TypeScript, single‑page app.
-  - Routes for:
-    - `/login` – login form.
-    - `/wallet` – protected wallet page (requires auth).
-
-- **Wallet page**:
-  - Displays:
-    - Current balance.
-    - Transaction list (incoming/outgoing).
-  - Provides:
-    - Send‑money form with `receiver_username` and `amount`.
-    - Inline validation error display and general error messages.
-  - Integrates real‑time updates through a `useWalletRealtime` composable.
-
-- **API utilities**:
-  - A small `api` helper around `fetch` to:
-    - Attach Bearer token from `localStorage`.
-    - Parse JSON.
-    - Normalize validation errors into a consistent shape.
-
-### 6.3 Real‑Time Flow
-
-1. User submits a transfer from the wallet page.
-2. Backend:
-   - Validates input.
-   - Performs atomic transfer in `WalletTransferService`.
-   - Emits `TransactionCreated` event with updated balances.
-3. Pusher broadcasts the event on:
-   - `private-wallet.user.{sender_id}`
-   - `private-wallet.user.{receiver_id}`
-4. Frontend:
-   - Echo receives `.wallet.transaction.created`.
-   - The wallet composable updates:
-     - The transaction list (prepend the new transaction).
-     - The current user’s balance, depending on whether they are sender or receiver.
-
----
-
-## 7. Summary
-
-- The project **implements the core wallet assignment**:
-  - Atomic transfers with commission and concurrency control.
-  - Stored balance on the user for scalability.
-  - Proper validation, idempotency, and rate limiting.
-  - Real‑time updates via Pusher and Laravel Echo.
-  - A Vue 3 SPA wallet UI with login, balance, history, and transfer form.
-
-- This document gives you:
-  - A high‑level overview of the architecture.
-  - Step‑by‑step instructions to run the app.
-  - A simple way to seed **exactly two demo users** for end‑to‑end testing from two browser sessions.
-  - Pusher configuration guidelines for real‑time testing.
+This provides confidence that the implementation matches the technical assignment and remains stable as the code evolves.
