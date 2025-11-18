@@ -208,6 +208,8 @@ interface TransactionStoreResponse {
   }
 }
 
+const router = useRouter()
+
 const currentUser = ref<WalletUser | null>(null)
 const balance = ref<string>('0.0000')
 const transactions = ref<WalletTransaction[]>([])
@@ -215,8 +217,6 @@ const transactions = ref<WalletTransaction[]>([])
 const isLoadingUser = ref(true)
 const isLoadingTransactions = ref(true)
 const isSubmitting = ref(false)
-
-const router = useRouter()
 
 const errors = reactive<{
   receiver_username: string | null
@@ -246,17 +246,22 @@ const totalDebitPreview = computed(() => {
 })
 
 const formattedBalance = computed(() => {
-  return Number(balance.value).toFixed(4)
+  const num = Number(balance.value || '0')
+  return Number.isFinite(num) ? num.toFixed(4) : '0.0000'
 })
 
 function formatDate(iso: string): string {
   const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
   return d.toLocaleString(undefined, {
     dateStyle: 'short',
     timeStyle: 'short',
   })
 }
 
+/**
+ * Map Laravel validation / error response into our local error state.
+ */
 function normalizeApiErrors(details?: ApiErrorResponse | null) {
   errors.receiver_username = null
   errors.amount = null
@@ -282,40 +287,42 @@ function normalizeApiErrors(details?: ApiErrorResponse | null) {
   }
 }
 
+/**
+ * Load current user + transactions and attach realtime listener.
+ */
 async function loadUserAndTransactions() {
+  isLoadingUser.value = true
+  isLoadingTransactions.value = true
+
   try {
-    isLoadingUser.value = true
+    const [user, res] = await Promise.all([
+      apiGet<UserResponse>('/user'),
+      apiGet<TransactionsIndexResponse>('/transactions'),
+    ])
 
-    const user = await apiGet<UserResponse>('/user')
     currentUser.value = user
-    isLoadingUser.value = false
-
-    isLoadingTransactions.value = true
-    const res = await apiGet<TransactionsIndexResponse>('/transactions')
-
     transactions.value = res.data
     balance.value = res.meta.balance
+
     if (currentUser.value) {
       useWalletRealtime(currentUser.value.id, handleRealtimeEvent)
     }
-
   } catch (err) {
+    console.error(err)
     generalError.value = 'Failed to load wallet data. Please refresh.'
+  } finally {
     isLoadingUser.value = false
     isLoadingTransactions.value = false
-    return
-  } finally {
-    isLoadingTransactions.value = false
-  }
-
-  if (currentUser.value) {
-    useWalletRealtime(currentUser.value.id, handleRealtimeEvent)
   }
 }
 
+/**
+ * Handle realtime broadcast: update list + balance.
+ */
 function handleRealtimeEvent(payload: TransactionCreatedPayload) {
   const tx = payload.transaction
 
+  // Add transaction to list if it's not already there
   const exists = transactions.value.some((t) => t.id === tx.id)
   if (!exists) {
     transactions.value.unshift(tx)
@@ -323,6 +330,7 @@ function handleRealtimeEvent(payload: TransactionCreatedPayload) {
 
   if (!currentUser.value) return
 
+  // Update balance for the current user depending on their role
   if (tx.sender_id === currentUser.value.id) {
     balance.value = payload.sender_balance
   } else if (tx.receiver_id === currentUser.value.id) {
@@ -330,6 +338,9 @@ function handleRealtimeEvent(payload: TransactionCreatedPayload) {
   }
 }
 
+/**
+ * Submit transfer and handle backend validation errors.
+ */
 async function submit() {
   if (!currentUser.value) return
 
@@ -343,6 +354,7 @@ async function submit() {
     })
 
     const tx = res.data
+
     const exists = transactions.value.some((t) => t.id === tx.id)
     if (!exists) {
       transactions.value.unshift(tx)

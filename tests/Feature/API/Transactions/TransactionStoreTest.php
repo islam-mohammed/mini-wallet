@@ -34,7 +34,7 @@ it('creates a transaction and returns updated balance', function () {
     Event::fake([TransactionCreated::class]);
 
     $response = postJson('/api/transactions', [
-        'receiver_id' => $receiver->id,
+        'receiver_username' => $receiver->username,
         'amount' => '100.0000',
     ]);
 
@@ -75,7 +75,7 @@ it('returns validation errors for invalid payload', function () {
 
     $response
         ->assertStatus(422)
-        ->assertJsonValidationErrors(['receiver_id', 'amount']);
+        ->assertJsonValidationErrors(['receiver_username', 'amount']);
 });
 
 it('returns error when balance is insufficient', function () {
@@ -87,7 +87,7 @@ it('returns error when balance is insufficient', function () {
     Sanctum::actingAs($sender);
 
     $response = postJson('/api/transactions', [
-        'receiver_id' => $receiver->id,
+        'receiver_username' => $receiver->username,
         'amount' => '100.0000',
     ]);
 
@@ -107,7 +107,7 @@ it('respects idempotency key and prevents duplicate transfers', function () {
     /** @var User $sender */
     $sender = User::factory()->create(['balance' => '1000.0000']);
     /** @var User $receiver */
-    $receiver = User::factory()->create(['balance' => '0.0000']);
+    $receiver = User::factory()->create(['username' => 'bob', 'balance' => '0.0000']);
 
     Sanctum::actingAs($sender);
 
@@ -122,8 +122,9 @@ it('respects idempotency key and prevents duplicate transfers', function () {
 
     $idempotencyKey = 'test-idem-key-123';
 
+
     $first = postJson('/api/transactions', [
-        'receiver_id' => $receiver->id,
+        'receiver_username' => $receiver->username,
         'amount' => '100.0000',
     ], [
         'Idempotency-Key' => $idempotencyKey,
@@ -132,7 +133,7 @@ it('respects idempotency key and prevents duplicate transfers', function () {
     $first->assertCreated();
 
     $second = postJson('/api/transactions', [
-        'receiver_id' => $receiver->id,
+        'receiver_username' => $receiver->username,
         'amount' => '100.0000',
     ], [
         'Idempotency-Key' => $idempotencyKey,

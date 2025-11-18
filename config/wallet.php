@@ -14,4 +14,5 @@ return [
     */
 
     'idempotency_ttl' => env('WALLET_IDEMPOTENCY_TTL', 300),
+    'wallet.transfer_rate_limit' => env('WALLET_TRANSFER_RATE_LIMIT', 5),
 ];

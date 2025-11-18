@@ -30,6 +30,8 @@ class TransactionResource extends JsonResource
             'id' => $this->id,
             'sender_id' => $this->sender_id,
             'receiver_id' => $this->receiver_id,
+            'sender_username' => $this->sender?->username,
+            'receiver_username' => $this->receiver?->username,
             'amount' => (string) $this->amount,
             'commission_fee' => (string) $this->commission_fee,
             'direction' => $direction,

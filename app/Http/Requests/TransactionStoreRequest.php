@@ -32,7 +32,7 @@ class TransactionStoreRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'receiver_id.not_in' => 'You cannot transfer money to yourself.',
+            'receiver_username.not_in' => 'You cannot transfer money to yourself.',
         ];
     }
 }

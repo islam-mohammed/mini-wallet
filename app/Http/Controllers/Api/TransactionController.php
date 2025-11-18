@@ -94,11 +94,11 @@ class TransactionController extends Controller
             $sender->refresh();
             $receiver->refresh();
 
-            TransactionCreated::dispatch(
-                $transaction,
+            event(new TransactionCreated(
+                $transaction->fresh(['sender', 'receiver']),
                 (string) $sender->balance,
-                (string) $receiver->balance
-            );
+                (string) $receiver->balance,
+            ));
 
             return response()->json([
                 'data' => new TransactionResource(

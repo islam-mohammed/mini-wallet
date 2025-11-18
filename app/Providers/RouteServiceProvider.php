@@ -16,10 +16,10 @@ class RouteServiceProvider extends ServiceProvider
 
     protected function configureRateLimiting(): void
     {
-        RateLimiter::for('wallet-transfers', function (Request $request) {
-            return Limit::perMinute(5)->by(
-                optional($request->user())->id ?: $request->ip()
-            );
+        RateLimiter::for('wallet-transfers', function ($request) {
+            $userId = optional($request->user())->id ?? $request->ip();
+
+            return Limit::perMinute(config('wallet.transfer_rate_limit', 5))->by($userId);
         });
     }
 }
